@@ -1,0 +1,225 @@
+</<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@2.0.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-vis"></script>
+  </head>
+  <body>
+  <script>
+
+  const storageID = "ovulation-regression";
+  //function to save a model
+  async function save (model) {
+    await model.save(`localstorage://${storageID}`);
+  }
+
+  //function to load a model saved on local storage with the save function
+  async function load (model) {
+    const storageKey = `localstorage://${storageID}`;
+    const models = await tf.io.listModels();
+    const modelInfo = models[storageKey];
+    if(modelInfo){
+      const result = await tf.loadLayersModel(storageKey);
+    }
+  }
+
+  async function predict(predictionInput) {
+
+    //here i used a fixed value just for testing,
+    // but idealy we would make a prediction based on previous menstrual cycle(s) of a user
+    // ex1 : calculate the mean value of the length of the user's previous Cycles
+    // ex2 : use an LSTM model to try to predict the length of the next cycle according
+    // to the length of previous cycles and/or other data.
+    // ex3 : use the length of the last cycle and maybe other data to try to predict the length of the next one.
+    // then the value obtained could be used as an input for the model
+    // to predict time of ovulation.
+    tf.tidy(() => {
+      const inputTensor = tf.tensor2d([predictionInput]);
+      const normalisedInput = normalise(inputTensor, normalisedFeature.min, normalisedFeature.max);
+      const normalisedOutputTensor = model.predict(normalisedInput.tensor);
+      const outputTensor = denormalise(normalisedOutputTensor, normalisedLabel.min, normalisedLabel.max);
+      const outputValue = Math.round(outputTensor.dataSync()[0]);
+      // the "outputValue" is the output of the model according to the input value given.
+      // so here the output value is the ovulation day
+      console.log(`Input : ${predictionInput}, Output : ${outputValue}`);
+    });
+
+  }
+
+  //function to plot a dataset with x and y
+  function denormalise(tensor, min, max) {
+   const featureDimensions = tensor.shape.length > 1 && tensor.shape[1];
+   if (featureDimensions && featureDimensions > 1) {
+     // More than one feature
+     // Split into separate tensors
+     const features = tf.split(tensor, featureDimensions, 1);
+
+     // Denormalise
+     const denormalised = features.map((featureTensor, i) => denormalise(featureTensor, min[i], max[i]));
+
+     const returnTensor = tf.concat(denormalised, 1);
+     return returnTensor;
+   }
+   else {
+     const denormalisedTensor = tensor.mul(max.sub(min)).add(min);
+     return denormalisedTensor;
+   }
+ }
+
+  async function plotPredictionLine(){
+    const [xs, ys] = tf.tidy(() => {
+      const normalisedX = tf.linspace(0,1,100);
+      const normalisedY = model.predict(normalisedX.reshape([100,1]));
+      const xs = denormalise(normalisedX,normalisedFeature.min,normalisedFeature.max);
+      const ys = denormalise(normalisedY,normalisedLabel.min,normalisedLabel.max);
+      return [xs.dataSync(),ys.dataSync()];
+    });
+
+    const predictedPoints = Array.from(xs).map((val, index) => {
+      return { x:val, y: ys[index] };
+    });
+
+    await plot(points, "Length of Cycle", predictedPoints);
+
+  }
+//function to normalise the data
+function normalise (tensor, previousMin = null, previousMax = null) {
+  const featureDimensions = tensor.shape.length > 1 && tensor.shape[1];
+  if (featureDimensions && featureDimensions > 1) {
+    // More than one feature
+    // Split into separate tensors
+    const features = tf.split(tensor, featureDimensions, 1);
+
+    // Normalise and find min/max values for each feature
+    const normalisedFeatures = features.map((featureTensor, i) =>
+      normalise(featureTensor, previousMin ? previousMin[i] : null, previousMax ? previousMax[i] : null));
+
+    // Prepare return values
+    // In this case the min and max properties will be arrays, with one
+    // value for each feature
+    const returnTensor = tf.concat(normalisedFeatures.map(f => f.tensor), 1);
+    const min = normalisedFeatures.map(f => f.min);
+    const max = normalisedFeatures.map(f => f.max);
+    return { tensor: returnTensor, min, max};
+  }
+  else {
+    // Just one feature
+    const min = previousMin || tensor.min();
+    const max = previousMax || tensor.max();
+    const normalisedTensor = tensor.sub(min).div(max.sub(min));
+    return {
+      tensor: normalisedTensor,
+      min,
+      max
+    };
+  }
+}
+
+  //function to denormalise the data => turn the normalised data back into normal values of the dataset
+  function denormalise(tensor, min, max){
+    const denormalisedTensor = tensor.mul(max.sub(min)).add(min);
+    return denormalisedTensor;
+  }
+
+  function createLinearModel(){
+    const model = tf.sequential();
+    model.add(tf.layers.dense({
+      units: 12,
+      useBias: true,
+      activation: 'sigmoid',
+      inputDim: 3,
+    }));
+    model.add(tf.layers.dense({
+      units: 24,
+      useBias: true,
+      activation: 'sigmoid',
+    }));
+    model.add(tf.layers.dense({
+      units: 12,
+      useBias: true,
+      activation: 'sigmoid',
+    }));
+    model.add(tf.layers.dense({
+      units: 1,
+      useBias: true,
+      activation: 'sigmoid',
+    }));
+    const optimizer = tf.train.adam();
+    model.compile({
+      loss: tf.losses.meanSquaredError,
+      optimizer,
+    })
+    return model;
+  }
+
+  async function trainModel (model, trainingFeature, trainingLabel){
+    const {onBatchEnd, onEpochEnd} = tfvis.show.fitCallbacks(
+      {name: "Training Performance"},
+      ['loss']
+    )
+    return model.fit(trainingFeature,trainingLabel, {
+      batchSize: 32,
+      epochs: 1000,
+      callbacks: {
+        onEpochEnd,
+      }
+    });
+  }
+  let points
+  let model = null;
+  let normalisedFeature, normalisedLabel;
+  let trainingFeatureTensor, testingFeatureTensor, trainingLabelTensor, testingLabelTensor;
+
+  async function run(){
+    //import dataset from CSV
+    const dataset = tf.data.csv("https://download946.mediafire.com/lgs9v31cok8g/vdnt1ulqntqpuc7/newdatacleaned%2Bmensesscore.csv");
+
+    //We extract x and y values to plot
+    const pointsDataset = dataset.map(record => ({
+      x: record.MeanCycleLength,
+      y: record.LengthofMenses,
+      z: record.TotalMensesScore,
+      i: record.Numberpreg,
+      j: record.Age,
+      k: record.BMI,
+      l: record.EstimatedDayofOvulation
+    }));
+    points = await pointsDataset.toArray();
+    if(points.length % 2 !== 0) {points.pop();}
+    tf.util.shuffle(points);
+    //plot(points, "Cycle Length");
+
+    //Extract Features (inputs)
+    const featureValues = points.map(p => [p.x, p.y, p.z]);
+    const featureTensor = tf.tensor2d(featureValues);
+
+    //Extract Labels (outputs)
+    const labelValues = points.map(p => p.l);
+    const labelTensor = tf.tensor2d(labelValues, [labelValues.length,1]);
+
+    //Normalise Features and Labels
+    normalisedFeature = normalise(featureTensor);
+    normalisedLabel = normalise(labelTensor);
+
+    [trainingFeature, testingFeature] = tf.split(normalisedFeature.tensor, 2);
+    [trainingLabel, testingLabel] = tf.split(normalisedLabel.tensor, 2);
+
+    model = createLinearModel();
+
+    const result = await trainModel(model, trainingFeature, trainingLabel);
+    const trainingLoss = result.history.loss.pop();
+    console.log(`Training set loss: ${trainingLoss}`);
+
+    const testingLossTensor = model.evaluate(testingFeature,testingLabel);
+    const testingLoss = await testingLossTensor.dataSync();
+    console.log(`Testing set loss: ${testingLoss}`);
+    save(model);
+    predict([29.82, 5,10]);
+    //plotPredictionLine();
+
+
+}
+run();
+  </script>
+  </body>
+</html>
