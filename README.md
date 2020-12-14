@@ -91,6 +91,7 @@
 &nbsp;&nbsp;&nbsp;&nbsp;머신러닝을 통해 보름달은 사용자가 입력한 정보를 이용하여 사용자별 진통제를 추천해줄 수 있다. 사용자는 자신에게 맞는 약을 복용함으로써 더 빠르고 정확한 효과를 기대할 수 있다. 빠진 정보가 있다면 NUGU Speaker의 slot filling 기능을 통해 얻을 수 있다.
 
 
+
 </br>
 </br>
 🔎 더 자세한 정보를 위해서는 [블로그 - 생리주기 예측](https://velog.io/@passengers/%EB%B3%B4%EB%A6%84%EB%8B%AC-2.1-%EB%A8%B8%EC%8B%A0%EB%9F%AC%EB%8B%9D-%EC%83%9D%EB%A6%AC-%EC%A3%BC%EA%B8%B0-%EC%98%88%EC%B8%A1) 또는 [블로그 - 진통제 추천](https://velog.io/@passengers/%EB%B3%B4%EB%A6%84%EB%8B%AC-2.2-%EB%A8%B8%EC%8B%A0%EB%9F%AC%EB%8B%9D-%EC%A7%84%ED%86%B5%EC%A0%9C-%EC%B6%94%EC%B2%9C) 을 확인해주세요!
